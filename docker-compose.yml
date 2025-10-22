@@ -1,0 +1,13 @@
+services:
+  db:
+    image: postgres:16
+    container_name: coursework_postgresql 
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=vladislav
+      - POSTGRES_PASSWORD=0000
+      - POSTGRES_DB=contracts_db
+    volumes:
+      - ./pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
