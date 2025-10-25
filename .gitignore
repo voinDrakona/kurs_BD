@@ -1,0 +1,22 @@
+# Файлы настроек VS Code
+.vscode/
+.vscode/settings.json
+
+# Системные файлы
+.DS_Store
+Thumbs.db
+
+# Логи и временные файлы
+*.log
+*.tmp
+
+# Файлы окружения
+.env
+.env.local
+
+# Зависимости (если есть)
+node_modules/
+__pycache__/
+
+*.docx
+*.yml
