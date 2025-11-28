@@ -642,232 +642,314 @@ class PaymentMethodsFrame(TableFrame):
             except Exception as e:
                 messagebox.showerror("Ошибка", f"Не удалось удалить:\n{str(e)}")
 
-class ContractsFrame(TableFrame):
-    """Фрейм для работы с договорами"""
+class ContractEditorFrame(tk.Frame):
+    """Вкладка Договора с редактированием договора и его этапов в одной форме (1:M)"""
     
     def __init__(self, parent):
-        columns = [
-            {'name': 'contract_id', 'display': 'ID', 'db_field': 'contract_id', 'width': 50},
-            {'name': 'contract_number', 'display': 'Номер', 'db_field': 'contract_number', 'width': 120},
-            {'name': 'contract_date', 'display': 'Дата', 'db_field': 'contract_date', 'width': 100},
-            {'name': 'customer_name', 'display': 'Заказчик', 'db_field': 'customer_name', 'width': 200},
-            {'name': 'contractor_name', 'display': 'Исполнитель', 'db_field': 'contractor_name', 'width': 200},
-            {'name': 'total_amount', 'display': 'Сумма', 'db_field': 'total_amount', 'width': 100},
-            {'name': 'paid_amount', 'display': 'Оплачено', 'db_field': 'paid_amount', 'width': 100},
-            {'name': 'debt_amount', 'display': 'Долг', 'db_field': 'debt_amount', 'width': 100},
-        ]
-        super().__init__(parent, 'view_contract_full', columns)
+        super().__init__(parent)
+        self.contract_id = None
+        self.setup_ui()
+        self.load_contracts_list()
+
+    def setup_ui(self):
+        # Левая часть — список всех договоров
+        left_pane = tk.Frame(self)
+        left_pane.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+
+        tk.Button(left_pane, text="Новый договор", command=self.new_contract, bg="#90ee90").pack(fill=tk.X, pady=2)
+        tk.Button(left_pane, text="Обновить список", command=self.load_contracts_list).pack(fill=tk.X, pady=2)
+
+        self.contracts_tree = ttk.Treeview(left_pane, columns=('number', 'date', 'customer'), show='tree headings')
+        self.contracts_tree.heading('#0', text='ID')
+        self.contracts_tree.heading('number', text='Номер')
+        self.contracts_tree.heading('date', text='Дата')
+        self.contracts_tree.heading('customer', text='Заказчик')
+        self.contracts_tree.column('#0', width=50)
+        self.contracts_tree.column('number', width=120)
+        self.contracts_tree.column('date', width=100)
+        self.contracts_tree.column('customer', width=200)
+        self.contracts_tree.pack(fill=tk.BOTH, expand=True)
+        self.contracts_tree.bind('<<TreeviewSelect>>', self.on_contract_selected)
+
+        # Правая часть — редактор договора + этапы
+        right_pane = tk.Frame(self)
+        right_pane.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        self.detail_editor = ContractDetailEditor(right_pane, self)
+        self.detail_editor.pack(fill=tk.BOTH, expand=True)
+
+    def load_contracts_list(self):
+        self.contracts_tree.delete(*self.contracts_tree.get_children())
+        query = """
+            SELECT c.contract_id, c.contract_number, c.contract_date, o.name
+            FROM contracts c
+            JOIN organizations o ON o.org_id = c.customer_org_id
+            ORDER BY c.contract_date DESC, c.contract_number
+        """
+        data, _ = DatabaseConnection.execute_query(query)
+        for cid, num, date, customer in data:
+            self.contracts_tree.insert('', tk.END, iid=cid, text=cid,
+                                     values=(num, date or '', customer or ''))
+
+    def on_contract_selected(self, event):
+        sel = self.contracts_tree.selection()
+        if sel:
+            self.contract_id = int(sel[0])
+            self.detail_editor.load_contract(self.contract_id)
+
+    def new_contract(self):
+        self.contract_id = None
+        self.detail_editor.clear_form()
+
+
+class ContractDetailEditor(tk.Frame):
+    """Редактор договора и его этапов (1:M в одной форме)"""
     
-    def get_select_query(self):
-        return "SELECT contract_id, contract_number, contract_date, customer_name, contractor_name, total_amount, paid_amount, debt_amount FROM view_contract_full ORDER BY contract_id"
-    
-    def add_record(self):
-        self.edit_dialog()
-    
-    def edit_record(self):
-        record = self.get_selected_record()
-        if record:
-            self.edit_dialog(record)
-        else:
-            messagebox.showwarning("Предупреждение", "Выберите запись для редактирования")
-    
-    def edit_dialog(self, record=None):
-        dialog = tk.Toplevel(self)
-        dialog.title("Договор" if not record else "Редактирование договора")
-        dialog.geometry("600x600")
+    def __init__(self, parent, master):
+        super().__init__(parent)
+        self.master = master
+        self.contract_id = None
+        self.milestones_data = []
         
-        edit_data = None
-        if record:
-            contract_id = record[0]
-            query = """
-                SELECT contract_number, contract_date, customer_org_id, contractor_org_id, 
-                       contract_type_id, current_stage_id, vat_id, execution_date, 
-                       subject, note, is_active
-                FROM contracts WHERE contract_id = %s
-            """
-            data, _ = DatabaseConnection.execute_query(query, (contract_id,))
-            if data:
-                edit_data = data[0]
+        self.load_lookups()    # ← Сначала загружаем справочники
+        self.build_ui()        # ← Потом строим интерфейс
+
+    def load_lookups(self):
+        # Справочники
+        self.orgs = {row[0]: row[1] for row in DatabaseConnection.execute_query("SELECT org_id, name FROM organizations")[0]}
+        self.org_ids = {v: k for k, v in self.orgs.items()}
         
-        # Fetch lookups
-        orgs_data, _ = DatabaseConnection.execute_query("SELECT org_id, name FROM organizations ORDER BY name")
-        org_names = [name for _, name in orgs_data]
-        org_id_to_name = {org_id: name for org_id, name in orgs_data}
-        org_name_to_id = {name: org_id for org_id, name in orgs_data}
+        self.types = {row[0]: row[1] for row in DatabaseConnection.execute_query("SELECT contract_type_id, name FROM contract_types")[0]}
+        self.type_ids = {v: k for k, v in self.types.items()}
         
-        types_data, _ = DatabaseConnection.execute_query("SELECT contract_type_id, name FROM contract_types ORDER BY name")
-        type_names = [name for _, name in types_data]
-        type_id_to_name = {tid: name for tid, name in types_data}
-        type_name_to_id = {name: tid for tid, name in types_data}
-        
-        stages_data, _ = DatabaseConnection.execute_query("SELECT stage_id, name FROM execution_stages ORDER BY name")
-        stage_names = [name for _, name in stages_data]
-        stage_id_to_name = {sid: name for sid, name in stages_data}
-        stage_name_to_id = {name: sid for sid, name in stages_data}
-        
-        vats_data, _ = DatabaseConnection.execute_query("SELECT vat_id, percent FROM vat_rates ORDER BY percent")
-        vat_names = [str(percent) for _, percent in vats_data]
-        vat_id_to_name = {vid: str(percent) for vid, percent in vats_data}
-        vat_name_to_id = {str(percent): vid for vid, percent in vats_data}
-        
-        fields = {}
-        vars = {}
+        self.stages = {row[0]: row[1] for row in DatabaseConnection.execute_query("SELECT stage_id, name FROM execution_stages")[0]}
+        self.stage_ids = {v: k for k, v in self.stages.items()}
+
+    def build_ui(self):
+        # === Основная информация ===
+        top = tk.LabelFrame(self, text="Договор")
+        top.pack(fill=tk.X, padx=5, pady=5)
+
         row = 0
-        
-        if record:
-            tk.Label(dialog, text="ID:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[0])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
-        
-        # Номер
-        tk.Label(dialog, text="*Номер:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        fields['contract_number'] = tk.Entry(dialog, width=40)
-        fields['contract_number'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if edit_data: fields['contract_number'].insert(0, edit_data[0] or '')
+        tk.Label(top, text="Номер*:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.entry_number = tk.Entry(top, width=30)
+        self.entry_number.grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
         row += 1
-        
-        # Дата
-        tk.Label(dialog, text="*Дата (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        fields['contract_date'] = tk.Entry(dialog, width=40)
-        fields['contract_date'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if edit_data: fields['contract_date'].insert(0, str(edit_data[1]) if edit_data[1] else '')
+
+        tk.Label(top, text="Дата*:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.entry_date = tk.Entry(top, width=30)
+        self.entry_date.grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
+        self.entry_date.insert(0, datetime.today().strftime('%Y-%m-%d'))
         row += 1
-        
-        # Заказчик
-        tk.Label(dialog, text="*Заказчик:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        vars['customer'] = tk.StringVar(value=org_id_to_name.get(edit_data[2] if edit_data else None, ''))
-        ttk.Combobox(dialog, textvariable=vars['customer'], values=org_names, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
+
+        tk.Label(top, text="Заказчик*:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.cb_customer = ttk.Combobox(top, values=list(self.orgs.values()), width=37)
+        self.cb_customer.grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
         row += 1
-        
-        # Исполнитель
-        tk.Label(dialog, text="*Исполнитель:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        vars['contractor'] = tk.StringVar(value=org_id_to_name.get(edit_data[3] if edit_data else None, ''))
-        ttk.Combobox(dialog, textvariable=vars['contractor'], values=org_names, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
+
+        tk.Label(top, text="Исполнитель*:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.cb_contractor = ttk.Combobox(top, values=list(self.orgs.values()), width=37)
+        self.cb_contractor.grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
         row += 1
-        
-        # Тип договора
-        tk.Label(dialog, text="*Тип договора:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        vars['contract_type'] = tk.StringVar(value=type_id_to_name.get(edit_data[4] if edit_data else None, ''))
-        ttk.Combobox(dialog, textvariable=vars['contract_type'], values=type_names, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
+
+        tk.Label(top, text="Тип договора*:").grid(row=row, column=0, sticky=tk.W, padx=5, pady=2)
+        self.cb_type = ttk.Combobox(top, values=list(self.types.values()), width=37)
+        self.cb_type.grid(row=row, column=1, sticky=tk.W, padx=5, pady=2)
         row += 1
-        
-        # Текущий этап
-        tk.Label(dialog, text="Текущий этап:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        vars['current_stage'] = tk.StringVar(value=stage_id_to_name.get(edit_data[5] if edit_data else None, ''))
-        ttk.Combobox(dialog, textvariable=vars['current_stage'], values=stage_names, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        row += 1
-        
-        # НДС
-        tk.Label(dialog, text="НДС (%):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        vars['vat'] = tk.StringVar(value=vat_id_to_name.get(edit_data[6] if edit_data else None, ''))
-        ttk.Combobox(dialog, textvariable=vars['vat'], values=vat_names, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        row += 1
-        
-        # Дата исполнения
-        tk.Label(dialog, text="Дата исполнения (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        fields['execution_date'] = tk.Entry(dialog, width=40)
-        fields['execution_date'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if edit_data: fields['execution_date'].insert(0, str(edit_data[7]) if edit_data[7] else '')
-        row += 1
-        
-        # Предмет
-        tk.Label(dialog, text="Предмет:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.NW)
-        fields['subject'] = tk.Text(dialog, width=40, height=3)
-        fields['subject'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if edit_data: fields['subject'].insert(1.0, edit_data[8] or '')
-        row += 1
-        
-        # Примечание
-        tk.Label(dialog, text="Примечание:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.NW)
-        fields['note'] = tk.Text(dialog, width=40, height=3)
-        fields['note'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if edit_data: fields['note'].insert(1.0, edit_data[9] or '')
-        row += 1
-        
-        # Активен
-        vars['is_active'] = tk.BooleanVar(value=edit_data[10] if edit_data else True)
-        tk.Checkbutton(dialog, text="Активен", variable=vars['is_active']).grid(row=row, column=0, columnspan=2, pady=5)
-        row += 1
-        
-        dialog.columnconfigure(1, weight=1)
-        
-        def save():
-            number = fields['contract_number'].get().strip()
-            date_str = fields['contract_date'].get().strip()
-            customer_name = vars['customer'].get()
-            contractor_name = vars['contractor'].get()
-            type_name = vars['contract_type'].get()
-            stage_name = vars['current_stage'].get()
-            vat_name = vars['vat'].get()
-            execution_date_str = fields['execution_date'].get().strip()
-            subject = fields['subject'].get(1.0, tk.END).strip() or None
-            note = fields['note'].get(1.0, tk.END).strip() or None
-            is_active = vars['is_active'].get()
-            
-            if not all([number, date_str, customer_name, contractor_name, type_name]):
-                messagebox.showerror("Ошибка", "Заполните обязательные поля (*)")
-                return
-            
-            try:
-                contract_date = datetime.strptime(date_str, '%Y-%m-%d').date()
-                execution_date = datetime.strptime(execution_date_str, '%Y-%m-%d').date() if execution_date_str else None
-            except ValueError:
-                messagebox.showerror("Ошибка", "Неверный формат даты (YYYY-MM-DD)")
-                return
-            
-            customer_id = org_name_to_id.get(customer_name)
-            contractor_id = org_name_to_id.get(contractor_name)
-            type_id = type_name_to_id.get(type_name)
-            stage_id = stage_name_to_id.get(stage_name) if stage_name else None
-            vat_id = vat_name_to_id.get(vat_name) if vat_name else None
-            
-            if not all([customer_id, contractor_id, type_id]):
-                messagebox.showerror("Ошибка", "Неверные значения списков")
-                return
-            
-            try:
-                if record:
-                    query = """
-                        UPDATE contracts SET contract_number=%s, contract_date=%s, customer_org_id=%s, 
-                                             contractor_org_id=%s, contract_type_id=%s, current_stage_id=%s, 
-                                             vat_id=%s, execution_date=%s, subject=%s, note=%s, is_active=%s 
-                        WHERE contract_id=%s
-                    """
-                    params = (number, contract_date, customer_id, contractor_id, type_id, stage_id, 
-                              vat_id, execution_date, subject, note, is_active, record[0])
-                else:
-                    query = """
-                        INSERT INTO contracts (contract_number, contract_date, customer_org_id, 
-                                               contractor_org_id, contract_type_id, current_stage_id, 
-                                               vat_id, execution_date, subject, note, is_active) 
-                        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                    """
-                    params = (number, contract_date, customer_id, contractor_id, type_id, stage_id, 
-                              vat_id, execution_date, subject, note, is_active)
-                
-                DatabaseConnection.execute_query(query, params, fetch=False)
-                messagebox.showinfo("Успех", "Данные сохранены")
-                self.load_data()
-                dialog.destroy()
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{str(e)}")
-        
-        tk.Button(dialog, text="Сохранить", command=save).grid(row=row, column=0, columnspan=2, pady=10)
-    
-    def delete_record(self):
-        record = self.get_selected_record()
-        if not record:
-            messagebox.showwarning("Предупреждение", "Выберите запись для удаления")
+
+        # === Этапы ===
+        mid = tk.LabelFrame(self, text="Этапы договора (1:M)")
+        mid.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        cols = ('no', 'date', 'amount', 'advance', 'subject')
+        self.tree_milestones = ttk.Treeview(mid, columns=cols, show='headings', height=12)
+        for col, text in zip(cols, ['№ этапа', 'Дата', 'Сумма', 'Аванс', 'Предмет']):
+            self.tree_milestones.heading(col, text=text)
+            self.tree_milestones.column(col, width=120)
+        self.tree_milestones.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
+
+        btns = tk.Frame(mid)
+        btns.pack(fill=tk.X, pady=5)
+        tk.Button(btns, text="+ Добавить этап", command=self.add_milestone).pack(side=tk.LEFT, padx=5)
+        tk.Button(btns, text="− Удалить выбранный", command=self.delete_milestone).pack(side=tk.LEFT, padx=5)
+        tk.Button(btns, text="Редактировать", command=self.edit_milestone).pack(side=tk.LEFT, padx=5)
+
+        # === Кнопка сохранения ===
+        bottom = tk.Frame(self)
+        bottom.pack(fill=tk.X, pady=10)
+        tk.Button(bottom, text="Сохранить договор и все этапы", command=self.save_all,
+                  font=('Arial', 12, 'bold'), bg="#90ee90").pack(side=tk.RIGHT, padx=20)
+
+    def add_milestone(self):
+        self.edit_milestone_dialog()
+
+    def edit_milestone(self):
+        sel = self.tree_milestones.selection()
+        if not sel:
+            messagebox.showwarning("Внимание", "Выберите этап для редактирования")
             return
-        
-        if messagebox.askyesno("Подтверждение", f"Удалить договор '{record[1]}'?"):
+        item = self.tree_milestones.item(sel[0])
+        values = item['values']
+        self.edit_milestone_dialog(values)
+
+    def edit_milestone_dialog(self, data=None):
+        win = tk.Toplevel(self)
+        win.title("Этап договора")
+        win.geometry("400x300")
+
+        tk.Label(win, text="№ этапа*:").pack(pady=2)
+        e_no = tk.Entry(win)
+        e_no.pack(pady=2)
+        if data: e_no.insert(0, data[0])
+
+        tk.Label(win, text="Дата (YYYY-MM-DD):").pack(pady=2)
+        e_date = tk.Entry(win)
+        e_date.pack(pady=2)
+        if data: e_date.insert(0, data[1])
+
+        tk.Label(win, text="Сумма*:").pack(pady=2)
+        e_amount = tk.Entry(win)
+        e_amount.pack(pady=2)
+        if data: e_amount.insert(0, data[2])
+
+        tk.Label(win, text="Аванс:").pack(pady=2)
+        e_advance = tk.Entry(win)
+        e_advance.pack(pady=2)
+        if data: e_advance.insert(0, data[3])
+
+        tk.Label(win, text="Предмет:").pack(pady=2)
+        e_subject = tk.Entry(win, width=50)
+        e_subject.pack(pady=2)
+        if data: e_subject.insert(0, data[4])
+
+        def save():
             try:
-                query = "DELETE FROM contracts WHERE contract_id=%s"
-                DatabaseConnection.execute_query(query, (record[0],), fetch=False)
-                messagebox.showinfo("Успех", "Запись удалена")
-                self.load_data()
-            except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось удалить:\n{str(e)}")
+                no = int(e_no.get())
+                amount = float(e_amount.get())
+                advance = float(e_advance.get() or 0)
+                new_row = (no, e_date.get(), amount, advance, e_subject.get())
+                if data:
+                    # редактируем
+                    for i, row in enumerate(self.milestones_data):
+                        if row[0] == data[0]:
+                            self.milestones_data[i] = new_row
+                            break
+                else:
+                    self.milestones_data.append(new_row)
+                self.refresh_milestones_table()
+                win.destroy()
+            except ValueError:
+                messagebox.showerror("Ошибка", "Проверьте числовые поля")
+
+        tk.Button(win, text="Сохранить", command=save).pack(pady=10)
+
+    def delete_milestone(self):
+        sel = self.tree_milestones.selection()
+        if not sel:
+            return
+        item = self.tree_milestones.item(sel[0])
+        no = item['values'][0]
+        self.milestones_data = [r for r in self.milestones_data if r[0] != no]
+        self.refresh_milestones_table()
+
+    def refresh_milestones_table(self):
+        self.tree_milestones.delete(*self.tree_milestones.get_children())
+        for row in sorted(self.milestones_data, key=lambda x: x[0]):
+            self.tree_milestones.insert('', tk.END, values=row)
+
+    def clear_form(self):
+        """Полная очистка формы для нового договора"""
+        self.contract_id = None
+        self.entry_number.delete(0, tk.END)
+        self.entry_date.delete(0, tk.END)
+        self.entry_date.insert(0, datetime.today().strftime('%Y-%m-%d'))
+        self.cb_customer.set('')
+        self.cb_contractor.set('')
+        self.cb_type.set('')
+        self.milestones_data = []
+        self.refresh_milestones_table()
+
+    def load_contract(self, contract_id):
+        self.contract_id = contract_id
+        query = "SELECT contract_number, contract_date, customer_org_id, contractor_org_id, contract_type_id FROM contracts WHERE contract_id = %s"
+        data, _ = DatabaseConnection.execute_query(query, (contract_id,))
+        if not data:
+            return
+        row = data[0]
+        self.entry_number.delete(0, tk.END)
+        self.entry_number.insert(0, row[0])
+        self.entry_date.delete(0, tk.END)
+        self.entry_date.insert(0, str(row[1]) if row[1] else '')
+        self.cb_customer.set(self.orgs.get(row[2], ''))
+        self.cb_contractor.set(self.orgs.get(row[3], ''))
+        self.cb_type.set(self.types.get(row[4], ''))
+
+        # Загружаем этапы
+        ms_query = "SELECT milestone_no, milestone_date, amount, advance_amount, subject FROM contract_milestones WHERE contract_id = %s ORDER BY milestone_no"
+        ms_data, _ = DatabaseConnection.execute_query(ms_query, (contract_id,))
+        self.milestones_data = [(r[0], str(r[1]) if r[1] else '', r[2], r[3], r[4] or '') for r in ms_data]
+        self.refresh_milestones_table()
+
+    def save_all(self):
+        # Валидация
+        if not all([self.entry_number.get().strip(), self.entry_date.get().strip(),
+                    self.cb_customer.get(), self.cb_contractor.get(), self.cb_type.get()]):
+            messagebox.showerror("Ошибка", "Заполните все обязательные поля договора")
+            return
+
+        try:
+            contract_date = datetime.strptime(self.entry_date.get().strip(), '%Y-%m-%d').date()
+        except ValueError:
+            messagebox.showerror("Ошибка", "Неверный формат даты")
+            return
+
+        customer_id = self.org_ids.get(self.cb_customer.get())
+        contractor_id = self.org_ids.get(self.cb_contractor.get())
+        type_id = self.type_ids.get(self.cb_type.get())
+        if not all([customer_id, contractor_id, type_id]):
+            messagebox.showerror("Ошибка", "Выберите значения из списков")
+            return
+
+        try:
+            conn = DatabaseConnection.get_connection()
+            cur = conn.cursor()
+
+            if self.contract_id:
+                # Обновляем договор
+                cur.execute("""UPDATE contracts SET contract_number=%s, contract_date=%s,
+                               customer_org_id=%s, contractor_org_id=%s, contract_type_id=%s
+                               WHERE contract_id=%s""",
+                            (self.entry_number.get().strip(), contract_date, customer_id,
+                             contractor_id, type_id, self.contract_id))
+            else:
+                # Создаём новый
+                cur.execute("""INSERT INTO contracts (contract_number, contract_date, customer_org_id,
+                               contractor_org_id, contract_type_id)
+                               VALUES (%s,%s,%s,%s,%s) RETURNING contract_id""",
+                            (self.entry_number.get().strip(), contract_date, customer_id,
+                             contractor_id, type_id))
+                self.contract_id = cur.fetchone()[0]
+
+            # Удаляем старые этапы
+            cur.execute("DELETE FROM contract_milestones WHERE contract_id=%s", (self.contract_id,))
+
+            # Добавляем новые этапы
+            for no, mdate_str, amount, advance, subject in self.milestones_data:
+                mdate = datetime.strptime(mdate_str, '%Y-%m-%d').date() if mdate_str.strip() else None
+                cur.execute("""INSERT INTO contract_milestones
+                               (contract_id, milestone_no, milestone_date, amount, advance_amount, subject)
+                               VALUES (%s,%s,%s,%s,%s,%s)""",
+                            (self.contract_id, no, mdate, float(amount), float(advance), subject or None))
+
+            conn.commit()
+            conn.close()
+
+            messagebox.showinfo("Успех", "Договор и все этапы успешно сохранены!")
+            self.master.load_contracts_list()
+            self.master.on_contract_selected(None)  # обновить правую часть
+
+        except Exception as e:
+            messagebox.showerror("Ошибка сохранения", str(e))
 
 class ContractMilestonesFrame(TableFrame):
     """Фрейм для работы с этапами договоров"""
@@ -1245,36 +1327,41 @@ class ReportsWindow(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Отчеты")
-        self.geometry("900x600")
-        
-        # Список отчетов
-        reports_frame = tk.Frame(self)
-        reports_frame.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
-        
-        tk.Label(reports_frame, text="Выберите отчет:", font=('Arial', 12, 'bold')).pack(pady=5)
-        
+        self.geometry("900x650")  # чуть выше, чтобы помещались все кнопки
+
+        # === Левая панель — список отчётов ===
+        reports_frame = tk.Frame(self, width=250)
+        reports_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
+        reports_frame.pack_propagate(False)
+
+        tk.Label(reports_frame, text="Доступные отчёты:", font=('Arial', 12, 'bold')).pack(pady=10)
+
         tk.Button(reports_frame, text="Сведения по договорам", 
-                 command=self.report_contract_details, width=25).pack(pady=2)
+                command=self.report_contract_details, width=28, height=2).pack(pady=4)
         tk.Button(reports_frame, text="Договора с долгом > 10000", 
-                 command=self.report_contracts_with_debt, width=25).pack(pady=2)
+                command=self.report_contracts_with_debt, width=28, height=2).pack(pady=4)
         tk.Button(reports_frame, text="Сводка по оплатам", 
-                 command=self.report_payments_summary, width=25).pack(pady=2)
-        
-        # Область отчета
+                command=self.report_payments_summary, width=28, height=2).pack(pady=4)
+        # ← можешь добавить остальные кнопки сюда же
+
+        # === Правая часть — таблица отчёта ===
         report_frame = tk.Frame(self)
-        report_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=5, pady=5)
-        
-        vsb = ttk.Scrollbar(report_frame, orient="vertical")
-        hsb = ttk.Scrollbar(report_frame, orient="horizontal")
-        
-        self.report_tree = ttk.Treeview(report_frame, yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-        
-        vsb.config(command=self.report_tree.yview)
-        hsb.config(command=self.report_tree.xscrollcommand)
-        
+        report_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
+
+        # 1. Сначала создаём Treeview с привязкой скроллбаров
+        self.report_tree = ttk.Treeview(report_frame, show="headings")
+
+        # 2. Создаём скроллбары
+        vsb = ttk.Scrollbar(report_frame, orient="vertical", command=self.report_tree.yview)
+        hsb = ttk.Scrollbar(report_frame, orient="horizontal", command=self.report_tree.xview)  # ← xview, а не xscrollcommand!
+
+        # 3. Привязываем скроллбары к Treeview
+        self.report_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+        # 4. Упаковываем всё
+        self.report_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
-        self.report_tree.pack(fill=tk.BOTH, expand=True)
     
     def report_contract_details(self):
         """Отчет: Сведения по договорам"""
@@ -1414,7 +1501,7 @@ class MainApplication(tk.Tk):
         self.notebook.add(ExecutionStagesFrame(self.notebook), text="Этапы исполнения")
         self.notebook.add(VatRatesFrame(self.notebook), text="Ставки НДС")
         self.notebook.add(PaymentMethodsFrame(self.notebook), text="Способы оплаты")
-        self.notebook.add(ContractsFrame(self.notebook), text="Договора")
+        self.notebook.add(ContractEditorFrame(self.notebook), text="Договора")
         self.notebook.add(ContractMilestonesFrame(self.notebook), text="Этапы договоров")
         self.notebook.add(PaymentsFrame(self.notebook), text="Оплаты")
         
@@ -1430,6 +1517,65 @@ class MainApplication(tk.Tk):
         """О программе"""
         messagebox.showinfo("О программе", 
                           "Система управления договорами\nВерсия 1.0\n\nКурсовая работа по БД")
+
+class ReportFilterDialog(tk.Toplevel):
+    def __init__(self, parent):
+        super().__init__(parent)
+        self.title("Параметры отчёта")
+        self.geometry("400x500")
+        self.result = None
+
+        tk.Label(self, text="Фильтры и сортировка", font=("Arial", 14, "bold")).pack(pady=10)
+
+        # Период
+        tk.Label(self, text="Дата договора от:").pack(anchor="w", padx=20)
+        self.date_from = tk.Entry(self)
+        self.date_from.pack(fill=tk.X, padx=20, pady=2)
+
+        tk.Label(self, text="Дата договора до:").pack(anchor="w", padx=20)
+        self.date_to = tk.Entry(self)
+        self.date_to.pack(fill=tk.X, padx=20, pady=2)
+
+        # Заказчик
+        tk.Label(self, text="Заказчик (часть названия):").pack(anchor="w", padx=20)
+        self.customer = tk.Entry(self)
+        self.customer.pack(fill=tk.X, padx=20, pady=2)
+
+        # Мин. долг
+        tk.Label(self, text="Минимальный долг:").pack(anchor="w", padx=20)
+        self.min_debt = tk.Entry(self)
+        self.min_debt.insert(0, "0")
+        self.min_debt.pack(fill=tk.X, padx=20, pady=2)
+
+        # Сортировка
+        tk.Label(self, text="Сортировать по:", font=("Arial", 10, "bold")).pack(pady=(20,5))
+        self.sort_var = tk.StringVar(value="total_debt")
+        options = ["total_debt", "customer", "month", "contract_number"]
+        for opt in options:
+            tk.Radiobutton(self, text=opt.replace("_", " ").title(), variable=self.sort_var, value=opt).pack(anchor="w", padx=40)
+
+        tk.Label(self, text="Порядок:").pack(pady=(10,0))
+        self.order_var = tk.StringVar(value="DESC")
+        tk.Radiobutton(self, text="По убыванию", variable=self.order_var, value="DESC").pack()
+        tk.Radiobutton(self, text="По возрастанию", variable=self.order_var, value="ASC").pack()
+
+        btn_frame = tk.Frame(self)
+        btn_frame.pack(pady=20)
+        tk.Button(btn_frame, text="Сформировать", command=self.ok, bg="#90ee90", width=15).pack(side=tk.LEFT, padx=10)
+        tk.Button(btn_frame, text="Отмена", command=self.destroy, width=15).pack(side=tk.LEFT, padx=10)
+
+    def ok(self):
+        self.result = (
+            {
+                'date_from': self.date_from.get() or None,
+                'date_to': self.date_to.get() or None,
+                'customer': self.customer.get() or None,
+                'min_debt': float(self.min_debt.get() or 0)
+            },
+            self.sort_var.get(),
+            self.order_var.get()
+        )
+        self.destroy()
 
 if __name__ == "__main__":
     app = MainApplication()
