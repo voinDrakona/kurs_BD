@@ -654,10 +654,11 @@ class ContractEditorFrame(tk.Frame):
     def setup_ui(self):
         # Левая часть — список всех договоров
         left_pane = tk.Frame(self)
-        left_pane.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=5)
+        left_pane.pack(side=tk.LEFT, fill=tk.Y, padx=5, pady=7)
 
-        tk.Button(left_pane, text="Новый договор", command=self.new_contract, bg="#90ee90").pack(fill=tk.X, pady=2)
+        tk.Button(left_pane, text="Новый договор", command=self.new_contract).pack(fill=tk.X, pady=2)
         tk.Button(left_pane, text="Обновить список", command=self.load_contracts_list).pack(fill=tk.X, pady=2)
+        tk.Button(left_pane, text="Удалить выбранный договор", command=self.delete_current_contract).pack(fill=tk.X, pady=2)
 
         self.contracts_tree = ttk.Treeview(left_pane, columns=('number', 'date', 'customer'), show='tree headings')
         self.contracts_tree.heading('#0', text='ID')
@@ -700,6 +701,53 @@ class ContractEditorFrame(tk.Frame):
     def new_contract(self):
         self.contract_id = None
         self.detail_editor.clear_form()
+
+    def delete_current_contract(self):
+        """Безопасное удаление выбранного договора со всеми связанными данными"""
+        selection = self.contracts_tree.selection()
+        if not selection:
+            messagebox.showwarning("Внимание", "Сначала выберите договор в списке слева")
+            return
+
+        contract_id = int(selection[0])
+        
+        # Получаем номер договора для красивого сообщения
+        item = self.contracts_tree.item(selection[0])
+        contract_num = item['values'][0] if item['values'] else "без номера"
+
+        # Двойное подтверждение — чтобы случайно не удалить
+        if not messagebox.askyesno(
+            "Подтверждение удаления",
+            f"Вы действительно хотите удалить договор № {contract_num}?\n\n"
+            "Будут удалены:\n"
+            "• все этапы договора\n"
+            "• все связанные оплаты\n"
+            "• сам договор\n\n"
+            "Операция необратима!",
+            icon='warning'
+        ):
+            return
+
+        try:
+            conn = DatabaseConnection.get_connection()
+            cur = conn.cursor()
+
+            # Удаляем в правильном порядке из-за внешних ключей
+            cur.execute("DELETE FROM payments WHERE contract_id = %s", (contract_id,))
+            cur.execute("DELETE FROM contract_milestones WHERE contract_id = %s", (contract_id,))
+            cur.execute("DELETE FROM contracts WHERE contract_id = %s", (contract_id,))
+
+            conn.commit()
+            conn.close()
+
+            messagebox.showinfo("Успех", f"Договор № {contract_num} успешно удалён из базы данных")
+            
+            # Обновляем интерфейс
+            self.load_contracts_list()
+            self.detail_editor.clear_form()
+
+        except Exception as e:
+            messagebox.showerror("Ошибка", f"Не удалось удалить договор:\n{str(e)}")
 
 
 class ContractDetailEditor(tk.Frame):
@@ -795,7 +843,7 @@ class ContractDetailEditor(tk.Frame):
     def edit_milestone_dialog(self, data=None):
         win = tk.Toplevel(self)
         win.title("Этап договора")
-        win.geometry("400x300")
+        win.geometry("400x350")
 
         tk.Label(win, text="№ этапа*:").pack(pady=2)
         e_no = tk.Entry(win)
@@ -1327,7 +1375,7 @@ class ReportsWindow(tk.Toplevel):
     def __init__(self, parent):
         super().__init__(parent)
         self.title("Отчеты")
-        self.geometry("900x650")  # чуть выше, чтобы помещались все кнопки
+        self.geometry("900x650")
 
         # === Левая панель — список отчётов ===
         reports_frame = tk.Frame(self, width=250)
@@ -1342,7 +1390,6 @@ class ReportsWindow(tk.Toplevel):
                 command=self.report_contracts_with_debt, width=28, height=2).pack(pady=4)
         tk.Button(reports_frame, text="Сводка по оплатам", 
                 command=self.report_payments_summary, width=28, height=2).pack(pady=4)
-        # ← можешь добавить остальные кнопки сюда же
 
         # === Правая часть — таблица отчёта ===
         report_frame = tk.Frame(self)
@@ -1364,10 +1411,15 @@ class ReportsWindow(tk.Toplevel):
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
     
     def report_contract_details(self):
-        """Отчет: Сведения по договорам"""
-        try:
-            query = """
-            SELECT 
+        """Отчет: Сведения по договорам + фильтры"""
+        dlg = SimpleReportFilterDialog(self)
+        self.wait_window(dlg)
+        if not dlg.result: 
+            return
+        f = dlg.result
+
+        query = """
+            SELECT
                 c.contract_number AS "Номер договора",
                 c.contract_date AS "Дата",
                 cust.name AS "Заказчик",
@@ -1382,40 +1434,71 @@ class ReportsWindow(tk.Toplevel):
             LEFT JOIN organizations contr ON contr.org_id = c.contractor_org_id
             LEFT JOIN contract_milestones cm ON cm.contract_id = c.contract_id
             LEFT JOIN payments p ON p.contract_id = c.contract_id
+            WHERE 1=1
+        """
+        params = []
+        if f['date_from']:
+            query += " AND c.contract_date >= %s"; params.append(f['date_from'])
+        if f['date_to']:
+            query += " AND c.contract_date <= %s"; params.append(f['date_to'])
+        if f['customer']:
+            query += " AND cust.name ILIKE %s"; params.append(f"%{f['customer']}%")
+        if f['min_debt'] > 0:
+            query += " HAVING c.debt_amount >= %s"; params.append(f['min_debt'])
+
+        query += f"""
             GROUP BY c.contract_id, c.contract_number, c.contract_date, cust.name, contr.name,
                      c.total_amount, c.paid_amount, c.debt_amount
-            ORDER BY c.contract_date DESC
-            """
-            
-            data, columns = DatabaseConnection.execute_query(query)
-            self.display_report(data, columns)
+            ORDER BY {f['sort']} {f['order']}
+        """
+
+        try:
+            data, columns = DatabaseConnection.execute_query(query, params)
+            self.display_report(data, columns, title="Сведения по договорам")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось сформировать отчет:\n{str(e)}")
-    
+            messagebox.showerror("Ошибка", f"Не удалось сформировать отчёт:\n{str(e)}")
+
     def report_contracts_with_debt(self):
-        """Отчет: Договора с долгом > 10000"""
+        """Отчет: Договора с долгом + фильтры"""
+        dlg = SimpleReportFilterDialog(self)
+        self.wait_window(dlg)
+        if not dlg.result: return
+        f = dlg.result
+
+        query = """
+            SELECT
+                c.contract_number AS "Номер",
+                cust.name AS "Заказчик",
+                c.total_amount AS "Сумма",
+                c.paid_amount AS "Оплачено",
+                c.debt_amount AS "Долг"
+            FROM contracts c
+            JOIN organizations cust ON cust.org_id = c.customer_org_id
+            WHERE c.debt_amount > 0
+        """
+        params = []
+        if f['min_debt'] > 10000:
+            query += " AND c.debt_amount >= %s"; params.append(f['min_debt'])
+        if f['customer']:
+            query += " AND cust.name ILIKE %s"; params.append(f"%{f['customer']}%")
+
+        query += f" ORDER BY {f['sort']} {f['order']}"
+
         try:
-            query = """
-            SELECT 
-                contract_number AS "Номер",
-                customer_name AS "Заказчик",
-                total_amount AS "Сумма",
-                paid_amount AS "Оплачено",
-                debt_amount AS "Долг"
-            FROM view_contracts_with_debt_over_10000
-            ORDER BY debt_amount DESC
-            """
-            
-            data, columns = DatabaseConnection.execute_query(query)
-            self.display_report(data, columns)
+            data, columns = DatabaseConnection.execute_query(query, params)
+            self.display_report(data, columns, title="Договора с задолженностью")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось сформировать отчет:\n{str(e)}")
-    
+            messagebox.showerror("Ошибка", f"Не удалось сформировать отчёт:\n{str(e)}")
+
     def report_payments_summary(self):
-        """Отчет: Сводка по оплатам"""
-        try:
-            query = """
-            SELECT 
+        """Отчет: Сводка по оплатам + фильтры"""
+        dlg = SimpleReportFilterDialog(self)
+        self.wait_window(dlg)
+        if not dlg.result: return
+        f = dlg.result
+
+        query = """
+            SELECT
                 c.contract_number AS "Номер договора",
                 cust.name AS "Заказчик",
                 COUNT(p.payment_id) AS "Кол-во платежей",
@@ -1424,17 +1507,29 @@ class ReportsWindow(tk.Toplevel):
             FROM contracts c
             LEFT JOIN organizations cust ON cust.org_id = c.customer_org_id
             LEFT JOIN payments p ON p.contract_id = c.contract_id
+            WHERE 1=1
+        """
+        params = []
+        if f['date_from']:
+            query += " AND p.payment_date >= %s"; params.append(f['date_from'])
+        if f['date_to']:
+            query += " AND p.payment_date <= %s"; params.append(f['date_to'])
+        if f['customer']:
+            query += " AND cust.name ILIKE %s"; params.append(f"%{f['customer']}%")
+
+        query += """
             GROUP BY c.contract_id, c.contract_number, cust.name
             HAVING COUNT(p.payment_id) > 0
             ORDER BY SUM(p.amount) DESC
-            """
-            
-            data, columns = DatabaseConnection.execute_query(query)
-            self.display_report(data, columns)
+        """
+
+        try:
+            data, columns = DatabaseConnection.execute_query(query, params)
+            self.display_report(data, columns, title="Сводка по оплатам")
         except Exception as e:
-            messagebox.showerror("Ошибка", f"Не удалось сформировать отчет:\n{str(e)}")
+            messagebox.showerror("Ошибка", f"Не удалось сформировать отчёт:\n{str(e)}")
     
-    def display_report(self, data, columns):
+    def display_report(self, data, columns, title="Отчёт"):
         """Отображение отчета"""
         self.report_tree.delete(*self.report_tree.get_children())
         
@@ -1518,63 +1613,74 @@ class MainApplication(tk.Tk):
         messagebox.showinfo("О программе", 
                           "Система управления договорами\nВерсия 1.0\n\nКурсовая работа по БД")
 
-class ReportFilterDialog(tk.Toplevel):
-    def __init__(self, parent):
+class SimpleReportFilterDialog(tk.Toplevel):
+    def __init__(self, parent, title="Фильтры и сортировка"):
         super().__init__(parent)
-        self.title("Параметры отчёта")
-        self.geometry("400x500")
+        self.title(title)
+        self.geometry("380x520")
+        self.resizable(False, False)
         self.result = None
 
-        tk.Label(self, text="Фильтры и сортировка", font=("Arial", 14, "bold")).pack(pady=10)
+        tk.Label(self, text="Параметры отчёта", font=("Arial", 14, "bold")).pack(pady=10)
 
-        # Период
+        # Период договора
         tk.Label(self, text="Дата договора от:").pack(anchor="w", padx=20)
-        self.date_from = tk.Entry(self)
-        self.date_from.pack(fill=tk.X, padx=20, pady=2)
+        self.e_from = tk.Entry(self, width=20)
+        self.e_from.pack(pady=2, padx=20)
 
         tk.Label(self, text="Дата договора до:").pack(anchor="w", padx=20)
-        self.date_to = tk.Entry(self)
-        self.date_to.pack(fill=tk.X, padx=20, pady=2)
+        self.e_to = tk.Entry(self, width=20)
+        self.e_to.pack(pady=2, padx=20)
 
-        # Заказчик
-        tk.Label(self, text="Заказчик (часть названия):").pack(anchor="w", padx=20)
-        self.customer = tk.Entry(self)
-        self.customer.pack(fill=tk.X, padx=20, pady=2)
+        # Заказчик (по части названия)
+        tk.Label(self, text="Заказчик (содержит):").pack(anchor="w", padx=20)
+        self.e_customer = tk.Entry(self, width=40)
+        self.e_customer.pack(pady=2, padx=20)
 
-        # Мин. долг
+        # Минимальный долг (только для отчётов с долгом)
         tk.Label(self, text="Минимальный долг:").pack(anchor="w", padx=20)
-        self.min_debt = tk.Entry(self)
-        self.min_debt.insert(0, "0")
-        self.min_debt.pack(fill=tk.X, padx=20, pady=2)
+        self.e_min_debt = tk.Entry(self, width=20)
+        self.e_min_debt.insert(0, "0")
+        self.e_min_debt.pack(pady=2, padx=20)
 
         # Сортировка
-        tk.Label(self, text="Сортировать по:", font=("Arial", 10, "bold")).pack(pady=(20,5))
-        self.sort_var = tk.StringVar(value="total_debt")
-        options = ["total_debt", "customer", "month", "contract_number"]
-        for opt in options:
-            tk.Radiobutton(self, text=opt.replace("_", " ").title(), variable=self.sort_var, value=opt).pack(anchor="w", padx=40)
+        tk.Label(self, text="Сортировать по:", font=("Arial", 10, "bold")).pack(pady=(15,5), anchor="w", padx=20)
+        self.sort_var = tk.StringVar(value="debt_amount")
+        options = [
+            ("debt_amount", "Задолженность"),
+            ("contract_date", "Дата договора"),
+            ("contract_number", "Номер договора"),
+            ("customer", "Заказчик"),
+            ("total_amount", "Сумма договора")
+        ]
+        for val, text in options:
+            tk.Radiobutton(self, text=text, variable=self.sort_var, value=val).pack(anchor="w", padx=40)
 
-        tk.Label(self, text="Порядок:").pack(pady=(10,0))
         self.order_var = tk.StringVar(value="DESC")
-        tk.Radiobutton(self, text="По убыванию", variable=self.order_var, value="DESC").pack()
-        tk.Radiobutton(self, text="По возрастанию", variable=self.order_var, value="ASC").pack()
+        frame_order = tk.Frame(self)
+        frame_order.pack(pady=10)
+        tk.Radiobutton(frame_order, text="По убыванию", variable=self.order_var, value="DESC").pack(side=tk.LEFT, padx=20)
+        tk.Radiobutton(frame_order, text="По возрастанию", variable=self.order_var, value="ASC").pack(side=tk.LEFT, padx=20)
 
-        btn_frame = tk.Frame(self)
-        btn_frame.pack(pady=20)
-        tk.Button(btn_frame, text="Сформировать", command=self.ok, bg="#90ee90", width=15).pack(side=tk.LEFT, padx=10)
-        tk.Button(btn_frame, text="Отмена", command=self.destroy, width=15).pack(side=tk.LEFT, padx=10)
+        btns = tk.Frame(self)
+        btns.pack(pady=20)
+        tk.Button(btns, text="Сформировать", command=self.ok, bg="#90ee90", width=15).pack(side=tk.LEFT, padx=10)
+        tk.Button(btns, text="Отмена", command=self.destroy, width=15).pack(side=tk.LEFT, padx=10)
 
     def ok(self):
-        self.result = (
-            {
-                'date_from': self.date_from.get() or None,
-                'date_to': self.date_to.get() or None,
-                'customer': self.customer.get() or None,
-                'min_debt': float(self.min_debt.get() or 0)
-            },
-            self.sort_var.get(),
-            self.order_var.get()
-        )
+        try:
+            min_debt = float(self.e_min_debt.get() or 0)
+        except:
+            min_debt = 0
+
+        self.result = {
+            'date_from': self.e_from.get().strip() or None,
+            'date_to': self.e_to.get().strip() or None,
+            'customer': self.e_customer.get().strip() or None,
+            'min_debt': min_debt,
+            'sort': self.sort_var.get(),
+            'order': self.order_var.get()
+        }
         self.destroy()
 
 if __name__ == "__main__":
