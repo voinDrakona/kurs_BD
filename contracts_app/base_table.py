@@ -5,10 +5,11 @@ from .db_config import DatabaseConnection
 class TableFrame(tk.Frame):
     """Базовый фрейм для работы с таблицами"""
     
-    def __init__(self, parent, table_name, columns_config):
+    def __init__(self, parent, table_name, columns_config, id_field='id'):
         super().__init__(parent)
         self.table_name = table_name
         self.columns_config = columns_config
+        self.id_field = id_field  # Имя поля ID (org_id, contract_id и т.д.)
         self.current_data = []
         self.filtered_data = []
         self.sort_column = None
@@ -36,8 +37,8 @@ class TableFrame(tk.Frame):
         vsb = ttk.Scrollbar(tree_frame, orient="vertical")
         hsb = ttk.Scrollbar(tree_frame, orient="horizontal")
         
-        columns = [col['name'] for col in self.columns_config]
-        self.tree = ttk.Treeview(tree_frame, columns=columns, show='tree headings',
+        visible_columns = [col['name'] for col in self.columns_config if not col['name'].endswith('_id') and col['name'] != self.id_field]
+        self.tree = ttk.Treeview(tree_frame, columns=visible_columns, show='tree headings',
                                  yscrollcommand=vsb.set, xscrollcommand=hsb.set)
         
         vsb.config(command=self.tree.yview)
@@ -47,23 +48,39 @@ class TableFrame(tk.Frame):
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(fill=tk.BOTH, expand=True)
         
+        # Configure columns
         self.tree.column('#0', width=50, minwidth=50)
         self.tree.heading('#0', text='№')
         
         for col in self.columns_config:
+            if col['name'].endswith('_id') or col['name'] == self.id_field:
+                continue  # Скрываем ID
             self.tree.column(col['name'], width=col.get('width', 100))
             self.tree.heading(col['name'], text=col['display'], 
-                            command=lambda c=col['name']: self.sort_by_column(c))
+                              command=lambda c=col['name']: self.sort_by_column(c))
+            
+        for col in self.columns_config:
+            col_name = col['name']
+            width = col.get('width', 100)
+            
+            if width == 0:
+                # Полностью скрываем колонку (даже заголовок не показываем)
+                self.tree.column(col_name, width=0, stretch=False, minwidth=0)
+                self.tree.heading(col_name, text="")
+            else:
+                self.tree.column(col_name, width=width)
+                self.tree.heading(col_name, text=col['display'], 
+                                command=lambda c=col_name: self.sort_by_column(c))
         
         self.tree.bind('<Double-1>', lambda e: self.edit_record())
     
     def get_select_query(self):
-        """Получить SELECT запрос для таблицы"""
-        columns = ', '.join([col['db_field'] for col in self.columns_config])
-        return f"SELECT {columns} FROM {self.table_name} ORDER BY {self.columns_config[0]['db_field']}"
-    
+        """Всегда запрашиваем ID первым, даже если он не в columns_config"""
+        visible_fields = ', '.join([col['db_field'] for col in self.columns_config])
+        id_field = getattr(self, 'id_field', self.columns_config[0]['db_field'] if self.columns_config else 'id')
+        return f"SELECT {id_field}, {visible_fields} FROM {self.table_name} ORDER BY {id_field} DESC"
+
     def load_data(self):
-        """Загрузка данных из БД"""
         try:
             query = self.get_select_query()
             data, _ = DatabaseConnection.execute_query(query)
@@ -78,8 +95,22 @@ class TableFrame(tk.Frame):
         self.tree.delete(*self.tree.get_children())
         
         for idx, row in enumerate(self.filtered_data, 1):
-            self.tree.insert('', tk.END, text=str(idx), values=row)
+            id_value = row[0]  # ID всегда первый в SELECT
+            visible_values = row[1:]  # Остальные — видимые
+            item = self.tree.insert('', tk.END, text=str(idx), values=visible_values)
+            self.tree.item(item, tags=(id_value,))  # Сохраняем ID в tags
     
+    def get_selected_record(self):
+        """Получить выбранную запись"""
+        selection = self.tree.selection()
+        if not selection:
+            return None
+        
+        item = self.tree.item(selection[0])
+        id_value = item['tags'][0] if item['tags'] else None
+        visible_values = item['values']
+        return (id_value, *visible_values)  # ID + видимые поля
+
     def sort_by_column(self, col):
         """Сортировка по столбцу"""
         col_idx = [c['name'] for c in self.columns_config].index(col)
@@ -94,15 +125,6 @@ class TableFrame(tk.Frame):
                                     key=lambda x: x[col_idx] if x[col_idx] is not None else '',
                                     reverse=self.sort_reverse)
         self.display_data()
-    
-    def get_selected_record(self):
-        """Получить выбранную запись"""
-        selection = self.tree.selection()
-        if not selection:
-            return None
-        
-        item = self.tree.item(selection[0])
-        return item['values']
     
     def search_dialog(self):
         """Диалог поиска"""

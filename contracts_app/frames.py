@@ -3,19 +3,19 @@ from tkinter import ttk, messagebox
 from datetime import datetime
 from .base_table import TableFrame
 from .db_config import DatabaseConnection
+from tkinter import simpledialog
 
 class OrganizationsFrame(TableFrame):
     """Фрейм для работы с организациями"""
-    
+
     def __init__(self, parent):
         columns = [
-            {'name': 'org_id', 'display': 'ID', 'db_field': 'org_id', 'width': 50},
             {'name': 'name', 'display': 'Наименование', 'db_field': 'name', 'width': 200},
             {'name': 'inn', 'display': 'ИНН', 'db_field': 'inn', 'width': 120},
             {'name': 'address', 'display': 'Адрес', 'db_field': 'address', 'width': 250},
             {'name': 'phone', 'display': 'Телефон', 'db_field': 'phone', 'width': 120},
         ]
-        super().__init__(parent, 'organizations', columns)
+        super().__init__(parent, 'organizations', columns, id_field='org_id')  # ← добавь id_field
     
     def add_record(self):
         self.edit_dialog()
@@ -117,10 +117,9 @@ class ContractTypesFrame(TableFrame):
     
     def __init__(self, parent):
         columns = [
-            {'name': 'contract_type_id', 'display': 'ID', 'db_field': 'contract_type_id', 'width': 50},
             {'name': 'name', 'display': 'Наименование', 'db_field': 'name', 'width': 200},
         ]
-        super().__init__(parent, 'contract_types', columns)
+        super().__init__(parent, 'contract_types', columns, id_field='contract_type_id')
     
     def add_record(self):
         self.edit_dialog()
@@ -139,11 +138,6 @@ class ContractTypesFrame(TableFrame):
         
         fields = {}
         row = 0
-        
-        if record:
-            tk.Label(dialog, text="ID:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[0])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
         
         tk.Label(dialog, text="*Наименование:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
         fields['name'] = tk.Entry(dialog, width=30)
@@ -196,10 +190,9 @@ class ExecutionStagesFrame(TableFrame):
     
     def __init__(self, parent):
         columns = [
-            {'name': 'stage_id', 'display': 'ID', 'db_field': 'stage_id', 'width': 50},
             {'name': 'name', 'display': 'Наименование', 'db_field': 'name', 'width': 200},
         ]
-        super().__init__(parent, 'execution_stages', columns)
+        super().__init__(parent, 'execution_stages', columns, id_field='stage_id')
     
     def add_record(self):
         self.edit_dialog()
@@ -218,11 +211,6 @@ class ExecutionStagesFrame(TableFrame):
         
         fields = {}
         row = 0
-        
-        if record:
-            tk.Label(dialog, text="ID:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[0])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
         
         tk.Label(dialog, text="*Наименование:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
         fields['name'] = tk.Entry(dialog, width=30)
@@ -275,10 +263,9 @@ class VatRatesFrame(TableFrame):
     
     def __init__(self, parent):
         columns = [
-            {'name': 'vat_id', 'display': 'ID', 'db_field': 'vat_id', 'width': 50},
             {'name': 'percent', 'display': 'Процент', 'db_field': 'percent', 'width': 200},
         ]
-        super().__init__(parent, 'vat_rates', columns)
+        super().__init__(parent, 'vat_rates', columns, id_field='vat_id')
     
     def add_record(self):
         self.edit_dialog()
@@ -297,11 +284,6 @@ class VatRatesFrame(TableFrame):
         
         fields = {}
         row = 0
-        
-        if record:
-            tk.Label(dialog, text="ID:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[0])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
         
         tk.Label(dialog, text="*Процент:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
         fields['percent'] = tk.Entry(dialog, width=30)
@@ -359,10 +341,9 @@ class PaymentMethodsFrame(TableFrame):
     
     def __init__(self, parent):
         columns = [
-            {'name': 'payment_method_id', 'display': 'ID', 'db_field': 'payment_method_id', 'width': 50},
             {'name': 'name', 'display': 'Наименование', 'db_field': 'name', 'width': 200},
         ]
-        super().__init__(parent, 'payment_methods', columns)
+        super().__init__(parent, 'payment_methods', columns, id_field='payment_method_id')
     
     def add_record(self):
         self.edit_dialog()
@@ -381,11 +362,6 @@ class PaymentMethodsFrame(TableFrame):
         
         fields = {}
         row = 0
-        
-        if record:
-            tk.Label(dialog, text="ID:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[0])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
         
         tk.Label(dialog, text="*Наименование:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
         fields['name'] = tk.Entry(dialog, width=30)
@@ -451,12 +427,10 @@ class ContractEditorFrame(tk.Frame):
         tk.Button(left_pane, text="Обновить список", command=self.load_contracts_list).pack(fill=tk.X, pady=2)
         tk.Button(left_pane, text="Удалить выбранный договор", command=self.delete_current_contract).pack(fill=tk.X, pady=2)
 
-        self.contracts_tree = ttk.Treeview(left_pane, columns=('number', 'date', 'customer'), show='tree headings')
-        self.contracts_tree.heading('#0', text='ID')
+        self.contracts_tree = ttk.Treeview(left_pane, columns=('number', 'date', 'customer'), show='headings')
         self.contracts_tree.heading('number', text='Номер')
         self.contracts_tree.heading('date', text='Дата')
         self.contracts_tree.heading('customer', text='Заказчик')
-        self.contracts_tree.column('#0', width=50)
         self.contracts_tree.column('number', width=120)
         self.contracts_tree.column('date', width=100)
         self.contracts_tree.column('customer', width=200)
@@ -480,8 +454,7 @@ class ContractEditorFrame(tk.Frame):
         """
         data, _ = DatabaseConnection.execute_query(query)
         for cid, num, date, customer in data:
-            self.contracts_tree.insert('', tk.END, iid=cid, text=cid,
-                                     values=(num, date or '', customer or ''))
+            self.contracts_tree.insert('', tk.END, iid=cid, values=(num, date or '', customer or ''))
 
     def on_contract_selected(self, event):
         sel = self.contracts_tree.selection()
@@ -795,8 +768,7 @@ class ContractMilestonesFrame(TableFrame):
     
     def __init__(self, parent):
         columns = [
-            {'name': 'contract_id', 'display': 'ID договора', 'db_field': 'cm.contract_id', 'width': 80},
-            {'name': 'milestone_no', 'display': '№ этапа', 'db_field': 'cm.milestone_no', 'width': 80},
+            {'name': 'milestone_no', 'display': '№ этапа', 'db_field': 'cm.milestone_no', 'width': 0},
             {'name': 'contract_number', 'display': 'Номер договора', 'db_field': 'c.contract_number', 'width': 120},
             {'name': 'milestone_date', 'display': 'Дата', 'db_field': 'cm.milestone_date', 'width': 100},
             {'name': 'stage_name', 'display': 'Этап', 'db_field': 'es.name', 'width': 150},
@@ -804,16 +776,23 @@ class ContractMilestonesFrame(TableFrame):
             {'name': 'advance_amount', 'display': 'Аванс', 'db_field': 'cm.advance_amount', 'width': 100},
             {'name': 'subject', 'display': 'Предмет', 'db_field': 'cm.subject', 'width': 200},
         ]
-        super().__init__(parent, 'contract_milestones', columns)
+        super().__init__(parent, 'contract_milestones', columns, id_field='contract_id')
     
     def get_select_query(self):
         return """
-            SELECT cm.contract_id, cm.milestone_no, c.contract_number, cm.milestone_date, 
-                   es.name as stage_name, cm.amount, cm.advance_amount, cm.subject 
-            FROM contract_milestones cm 
-            JOIN contracts c ON c.contract_id = cm.contract_id 
-            LEFT JOIN execution_stages es ON es.stage_id = cm.stage_id 
-            ORDER BY cm.contract_id, cm.milestone_no
+            SELECT 
+                cm.contract_id,
+                cm.milestone_no,
+                c.contract_number,
+                cm.milestone_date,
+                COALESCE(es.name, '—') as stage_name,
+                cm.amount,
+                cm.advance_amount,
+                cm.subject
+            FROM contract_milestones cm
+            JOIN contracts c ON c.contract_id = cm.contract_id
+            LEFT JOIN execution_stages es ON es.stage_id = cm.stage_id
+            ORDER BY c.contract_number, cm.milestone_no
         """
     
     def add_record(self):
@@ -846,27 +825,11 @@ class ContractMilestonesFrame(TableFrame):
         vars = {}
         row = 0
         
-        if record:
-            tk.Label(dialog, text="ID договора:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[0])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
-            
-            tk.Label(dialog, text="№ этапа:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[1])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
-        
         # Договор
         tk.Label(dialog, text="*Договор:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
         vars['contract'] = tk.StringVar(value=contract_id_to_number.get(record[0] if record else None, ''))
         ttk.Combobox(dialog, textvariable=vars['contract'], values=contract_numbers, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
         row += 1
-        
-        # № этапа
-        if not record:
-            tk.Label(dialog, text="*№ этапа:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            fields['milestone_no'] = tk.Entry(dialog, width=40)
-            fields['milestone_no'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-            row += 1
         
         # Дата
         tk.Label(dialog, text="Дата (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
@@ -905,31 +868,39 @@ class ContractMilestonesFrame(TableFrame):
         dialog.columnconfigure(1, weight=1)
         
         def save():
+            # Договор
             contract_name = vars['contract'].get()
             if not contract_name:
                 messagebox.showerror("Ошибка", "Выберите договор")
                 return
             contract_id_val = contract_number_to_id[contract_name]
-            
+
+            # Номер этапа — ОБЯЗАТЕЛЬНО!
             if record:
-                milestone_no_val = record[1]
+                milestone_no_val = record[1]  # ← берём из выбранной строки (он скрыт, но есть!)
             else:
-                milestone_no_str = fields['milestone_no'].get().strip()
-                if not milestone_no_str:
-                    messagebox.showerror("Ошибка", "Заполните № этапа")
+                # При добавлении — спрашиваем у пользователя
+                no_str = simpledialog.askstring("Номер этапа", "Введите номер этапа (целое число):", parent=dialog)
+                if not no_str or not no_str.strip().isdigit():
+                    messagebox.showerror("Ошибка", "Введите корректный номер этапа")
                     return
-                try:
-                    milestone_no_val = int(milestone_no_str)
-                except ValueError:
-                    messagebox.showerror("Ошибка", "№ этапа должен быть числом")
-                    return
-            
+                milestone_no_val = int(no_str.strip())
+
+            # Дата
             date_str = fields['milestone_date'].get().strip()
-            milestone_date = datetime.strptime(date_str, '%Y-%m-%d').date() if date_str else None
-            
+            milestone_date = None
+            if date_str:
+                try:
+                    milestone_date = datetime.strptime(date_str, '%Y-%m-%d').date()
+                except ValueError:
+                    messagebox.showerror("Ошибка", "Неверный формат даты (YYYY-MM-DD)")
+                    return
+
+            # Этап
             stage_name = vars['stage'].get()
             stage_id = stage_name_to_id.get(stage_name) if stage_name else None
-            
+
+            # Сумма
             amount_str = fields['amount'].get().strip()
             if not amount_str:
                 messagebox.showerror("Ошибка", "Заполните сумму")
@@ -939,40 +910,43 @@ class ContractMilestonesFrame(TableFrame):
             except ValueError:
                 messagebox.showerror("Ошибка", "Сумма должна быть числом")
                 return
-            
+
+            # Аванс
             advance_str = fields['advance_amount'].get().strip()
-            try:
-                advance_amount = float(advance_str) if advance_str else 0.0
-            except ValueError:
-                messagebox.showerror("Ошибка", "Аванс должен быть числом")
-                return
-            
-            subject = fields['subject'].get(1.0, tk.END).strip() or None
-            
+            advance_amount = float(advance_str) if advance_str else 0.0
+
+            # Предмет
+            subject = fields['subject'].get("1.0", tk.END).strip() or None
+
             try:
                 if record:
+                    # ←←←←←←←←←←←←←←←←←←←←←←←←←←←←←
+                    # ОБЯЗАТЕЛЬНО передаём milestone_no в WHERE и в params!
                     query = """
-                        UPDATE contract_milestones SET milestone_date=%s, stage_id=%s, amount=%s, 
-                                                       advance_amount=%s, subject=%s 
+                        UPDATE contract_milestones 
+                        SET contract_id=%s, milestone_date=%s, stage_id=%s, 
+                            amount=%s, advance_amount=%s, subject=%s
                         WHERE contract_id=%s AND milestone_no=%s
                     """
-                    params = (milestone_date, stage_id, amount, advance_amount, subject, 
-                              contract_id_val, milestone_no_val)
+                    params = (contract_id_val, milestone_date, stage_id, 
+                            amount, advance_amount, subject,
+                            contract_id_val, milestone_no_val)
                 else:
                     query = """
-                        INSERT INTO contract_milestones (contract_id, milestone_no, milestone_date, 
-                                                         stage_id, amount, advance_amount, subject) 
+                        INSERT INTO contract_milestones 
+                        (contract_id, milestone_no, milestone_date, stage_id, amount, advance_amount, subject)
                         VALUES (%s, %s, %s, %s, %s, %s, %s)
                     """
-                    params = (contract_id_val, milestone_no_val, milestone_date, stage_id, 
-                              amount, advance_amount, subject)
-                
+                    params = (contract_id_val, milestone_no_val, milestone_date, stage_id,
+                            amount, advance_amount, subject)
+
                 DatabaseConnection.execute_query(query, params, fetch=False)
-                messagebox.showinfo("Успех", "Данные сохранены")
-                self.load_data()
+                messagebox.showinfo("Успех", "Этап сохранён")
+                self.load_data()  # ← обновляем таблицу
                 dialog.destroy()
+
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{str(e)}")
+                messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
         
         tk.Button(dialog, text="Сохранить", command=save).grid(row=row, column=0, columnspan=2, pady=10)
     
@@ -992,28 +966,29 @@ class ContractMilestonesFrame(TableFrame):
                 messagebox.showerror("Ошибка", f"Не удалось удалить:\n{str(e)}")
 
 class PaymentsFrame(TableFrame):
-    """Фрейм для работы с оплатами"""
-    
     def __init__(self, parent):
         columns = [
-            {'name': 'payment_id', 'display': 'ID', 'db_field': 'p.payment_id', 'width': 50},
-            {'name': 'contract_id', 'display': 'ID договора', 'db_field': 'p.contract_id', 'width': 80},
             {'name': 'contract_number', 'display': 'Номер договора', 'db_field': 'c.contract_number', 'width': 120},
             {'name': 'payment_date', 'display': 'Дата', 'db_field': 'p.payment_date', 'width': 100},
             {'name': 'amount', 'display': 'Сумма', 'db_field': 'p.amount', 'width': 100},
             {'name': 'payment_method_name', 'display': 'Способ оплаты', 'db_field': 'pm.name', 'width': 150},
-            {'name': 'payment_doc_number', 'display': '№ документа', 'db_field': 'p.payment_doc_number', 'width': 150},
+            {'name': 'payment_doc_number', 'display': '№ документа', 'db_field': 'p.payment_doc_number', 'width': 120},
         ]
-        super().__init__(parent, 'payments', columns)
+        super().__init__(parent, 'payments', columns, id_field='p.payment_id')  # ← вот эта строка важна!
     
     def get_select_query(self):
         return """
-            SELECT p.payment_id, p.contract_id, c.contract_number, p.payment_date, 
-                   p.amount, pm.name as payment_method_name, p.payment_doc_number 
+            SELECT 
+                p.payment_id,
+                c.contract_number,
+                p.payment_date,
+                p.amount,
+                COALESCE(pm.name, '—') as payment_method_name,
+                p.payment_doc_number
             FROM payments p 
             JOIN contracts c ON c.contract_id = p.contract_id 
             LEFT JOIN payment_methods pm ON pm.payment_method_id = p.payment_method_id 
-            ORDER BY p.payment_id
+            ORDER BY p.payment_date DESC, p.payment_id
         """
     
     def add_record(self):
@@ -1028,71 +1003,79 @@ class PaymentsFrame(TableFrame):
     
     def edit_dialog(self, record=None):
         dialog = tk.Toplevel(self)
-        dialog.title("Оплата" if not record else "Редактирование оплаты")
+        dialog.title("Новая оплата" if not record else "Редактирование оплаты")
         dialog.geometry("500x400")
-        
-        # Fetch lookups
+
+        # Загружаем справочники
         contracts_data, _ = DatabaseConnection.execute_query("SELECT contract_id, contract_number FROM contracts ORDER BY contract_number")
-        contract_numbers = [number for _, number in contracts_data]
-        contract_id_to_number = {cid: number for cid, number in contracts_data}
-        contract_number_to_id = {number: cid for cid, number in contracts_data}
-        
+        contract_numbers = [row[1] for row in contracts_data]
+        contract_id_to_number = {row[0]: row[1] for row in contracts_data}
+        contract_number_to_id = {row[1]: row[0] for row in contracts_data}
+
         methods_data, _ = DatabaseConnection.execute_query("SELECT payment_method_id, name FROM payment_methods ORDER BY name")
-        method_names = [name for _, name in methods_data]
-        method_id_to_name = {mid: name for mid, name in methods_data}
-        method_name_to_id = {name: mid for mid, name in methods_data}
-        
-        fields = {}
+        method_names = [row[1] for row in methods_data]
+        method_id_to_name = {row[0]: row[1] for row in methods_data}
+        method_name_to_id = {row[1]: row[0] for row in methods_data}
+
         vars = {}
+        fields = {}
         row = 0
-        
-        if record:
-            tk.Label(dialog, text="ID:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-            tk.Label(dialog, text=str(record[0])).grid(row=row, column=1, padx=5, pady=5, sticky=tk.W)
-            row += 1
-        
+
         # Договор
-        tk.Label(dialog, text="*Договор:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        vars['contract'] = tk.StringVar(value=contract_id_to_number.get(record[1] if record else None, ''))
-        ttk.Combobox(dialog, textvariable=vars['contract'], values=contract_numbers, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
+        tk.Label(dialog, text="*Договор:").grid(row=row, column=0, padx=10, pady=8, sticky=tk.W)
+        vars['contract'] = tk.StringVar()
+        combo_contract = ttk.Combobox(dialog, textvariable=vars['contract'], values=contract_numbers, state="readonly")
+        combo_contract.grid(row=row, column=1, padx=10, pady=8, sticky=tk.EW)
+        if record and len(record) > 1:
+            contract_id = record[1]  # record[0] — payment_id, record[1] — contract_id
+            contract_number = contract_id_to_number.get(contract_id, "")
+            vars['contract'].set(contract_number)  # ← ВАЖНО: устанавливаем значение!
         row += 1
-        
+
         # Дата
-        tk.Label(dialog, text="*Дата (YYYY-MM-DD):").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
+        tk.Label(dialog, text="*Дата (YYYY-MM-DD):").grid(row=row, column=0, padx=10, pady=8, sticky=tk.W)
         fields['payment_date'] = tk.Entry(dialog, width=40)
-        fields['payment_date'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if record: fields['payment_date'].insert(0, str(record[3]) if record[3] else '')
+        fields['payment_date'].grid(row=row, column=1, padx=10, pady=8, sticky=tk.EW)
+        if record and len(record) > 2:
+            fields['payment_date'].insert(0, str(record[2]) if record[2] else '')
         row += 1
-        
+
         # Сумма
-        tk.Label(dialog, text="*Сумма:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
+        tk.Label(dialog, text="*Сумма:").grid(row=row, column=0, padx=10, pady=8, sticky=tk.W)
         fields['amount'] = tk.Entry(dialog, width=40)
-        fields['amount'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if record: fields['amount'].insert(0, str(record[4]) if record[4] is not None else '')
+        fields['amount'].grid(row=row, column=1, padx=10, pady=8, sticky=tk.EW)
+        if record and len(record) > 3:
+            fields['amount'].insert(0, str(record[3]) if record[3] is not None else '')
         row += 1
-        
+
         # Способ оплаты
-        tk.Label(dialog, text="Способ оплаты:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
-        vars['payment_method'] = tk.StringVar(value=record[5] if record else '')
-        ttk.Combobox(dialog, textvariable=vars['payment_method'], values=method_names, width=37).grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
+        tk.Label(dialog, text="Способ оплаты:").grid(row=row, column=0, padx=10, pady=8, sticky=tk.W)
+        vars['payment_method'] = tk.StringVar()
+        combo_method = ttk.Combobox(dialog, textvariable=vars['payment_method'], values=method_names, state="readonly")
+        combo_method.grid(row=row, column=1, padx=10, pady=8, sticky=tk.EW)
+        if record and len(record) > 4:
+            method_id = record[4]
+            method_name = method_id_to_name.get(method_id, "")
+            vars['payment_method'].set(method_name)  # ← ВАЖНО: устанавливаем!
         row += 1
-        
+
         # № документа
-        tk.Label(dialog, text="№ документа:").grid(row=row, column=0, padx=5, pady=5, sticky=tk.W)
+        tk.Label(dialog, text="№ документа:").grid(row=row, column=0, padx=10, pady=8, sticky=tk.W)
         fields['payment_doc_number'] = tk.Entry(dialog, width=40)
-        fields['payment_doc_number'].grid(row=row, column=1, padx=5, pady=5, sticky=tk.EW)
-        if record: fields['payment_doc_number'].insert(0, record[6] or '')
+        fields['payment_doc_number'].grid(row=row, column=1, padx=10, pady=8, sticky=tk.EW)
+        if record and len(record) > 5:
+            fields['payment_doc_number'].insert(0, record[5] or '')
         row += 1
-        
+
         dialog.columnconfigure(1, weight=1)
-        
+
         def save():
             contract_name = vars['contract'].get()
             if not contract_name:
                 messagebox.showerror("Ошибка", "Выберите договор")
                 return
             contract_id_val = contract_number_to_id[contract_name]
-            
+
             date_str = fields['payment_date'].get().strip()
             if not date_str:
                 messagebox.showerror("Ошибка", "Заполните дату")
@@ -1102,7 +1085,7 @@ class PaymentsFrame(TableFrame):
             except ValueError:
                 messagebox.showerror("Ошибка", "Неверный формат даты (YYYY-MM-DD)")
                 return
-            
+
             amount_str = fields['amount'].get().strip()
             if not amount_str:
                 messagebox.showerror("Ошибка", "Заполните сумму")
@@ -1114,37 +1097,37 @@ class PaymentsFrame(TableFrame):
             except ValueError:
                 messagebox.showerror("Ошибка", "Сумма должна быть положительным числом")
                 return
-            
+
             method_name = vars['payment_method'].get()
             method_id = method_name_to_id.get(method_name) if method_name else None
-            
+
             doc_number = fields['payment_doc_number'].get().strip() or None
-            
+
             try:
                 if record:
                     query = """
-                        UPDATE payments SET contract_id=%s, payment_date=%s, amount=%s, 
-                                            payment_method_id=%s, payment_doc_number=%s 
+                        UPDATE payments 
+                        SET contract_id=%s, payment_date=%s, amount=%s, 
+                            payment_method_id=%s, payment_doc_number=%s 
                         WHERE payment_id=%s
                     """
                     params = (contract_id_val, payment_date, amount, method_id, doc_number, record[0])
                 else:
                     query = """
-                        INSERT INTO payments (contract_id, payment_date, amount, 
-                                              payment_method_id, payment_doc_number) 
+                        INSERT INTO payments (contract_id, payment_date, amount, payment_method_id, payment_doc_number) 
                         VALUES (%s, %s, %s, %s, %s)
                     """
                     params = (contract_id_val, payment_date, amount, method_id, doc_number)
-                
+
                 DatabaseConnection.execute_query(query, params, fetch=False)
-                messagebox.showinfo("Успех", "Данные сохранены")
+                messagebox.showinfo("Успех", "Оплата сохранена")
                 self.load_data()
                 dialog.destroy()
             except Exception as e:
-                messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{str(e)}")
+                messagebox.showerror("Ошибка", f"Не удалось сохранить:\n{e}")
+
+        tk.Button(dialog, text="Сохранить", command=save, bg="#90ee90", width=15).grid(row=row, column=0, columnspan=2, pady=20)
         
-        tk.Button(dialog, text="Сохранить", command=save).grid(row=row, column=0, columnspan=2, pady=10)
-    
     def delete_record(self):
         record = self.get_selected_record()
         if not record:

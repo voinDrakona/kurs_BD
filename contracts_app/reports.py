@@ -107,7 +107,7 @@ class ReportsWindow(tk.Toplevel):
                 c.debt_amount AS "Долг"
             FROM contracts c
             JOIN organizations cust ON cust.org_id = c.customer_org_id
-            WHERE c.debt_amount > 0
+            WHERE c.debt_amount > 10000
         """
         params = []
         if f['min_debt'] > 10000:
