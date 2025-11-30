@@ -15,7 +15,6 @@ class MainApplication(tk.Tk):
         self.title("Система управления договорами")
         self.geometry("1200x700")
         
-        # Проверка подключения
         try:
             DatabaseConnection.get_connection().close()
         except Exception as e:
@@ -32,28 +31,23 @@ class MainApplication(tk.Tk):
         menubar = tk.Menu(self)
         self.config(menu=menubar)
         
-        # Меню Файл
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Файл", menu=file_menu)
         file_menu.add_command(label="Выход", command=self.quit)
         
-        # Меню Отчеты
         reports_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Отчеты", menu=reports_menu)
         reports_menu.add_command(label="Открыть отчеты", command=self.open_reports)
         
-        # Меню Справка
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Справка", menu=help_menu)
         help_menu.add_command(label="О программе", command=self.show_about)
     
     def setup_ui(self):
         """Создание интерфейса"""
-        # Notebook для вкладок
         self.notebook = ttk.Notebook(self)
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=5, pady=5)
         
-        # Вкладки
         self.notebook.add(OrganizationsFrame(self.notebook), text="Организации")
         self.notebook.add(ContractTypesFrame(self.notebook), text="Типы договоров")
         self.notebook.add(ExecutionStagesFrame(self.notebook), text="Этапы исполнения")
@@ -63,7 +57,6 @@ class MainApplication(tk.Tk):
         self.notebook.add(ContractMilestonesFrame(self.notebook), text="Этапы договоров")
         self.notebook.add(PaymentsFrame(self.notebook), text="Оплаты")
         
-        # Строка состояния
         status_bar = tk.Label(self, text="Готов", bd=1, relief=tk.SUNKEN, anchor=tk.W)
         status_bar.pack(side=tk.BOTTOM, fill=tk.X)
     

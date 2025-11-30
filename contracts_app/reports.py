@@ -10,7 +10,6 @@ class ReportsWindow(tk.Toplevel):
         self.title("Отчеты")
         self.geometry("900x650")
 
-        # === Левая панель — список отчётов ===
         reports_frame = tk.Frame(self, width=250)
         reports_frame.pack(side=tk.LEFT, fill=tk.Y, padx=10, pady=10)
         reports_frame.pack_propagate(False)
@@ -24,21 +23,16 @@ class ReportsWindow(tk.Toplevel):
         tk.Button(reports_frame, text="Сводка по оплатам", 
                 command=self.report_payments_summary, width=28, height=2).pack(pady=4)
 
-        # === Правая часть — таблица отчёта ===
         report_frame = tk.Frame(self)
         report_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # 1. Сначала создаём Treeview с привязкой скроллбаров
         self.report_tree = ttk.Treeview(report_frame, show="headings")
 
-        # 2. Создаём скроллбары
         vsb = ttk.Scrollbar(report_frame, orient="vertical", command=self.report_tree.yview)
-        hsb = ttk.Scrollbar(report_frame, orient="horizontal", command=self.report_tree.xview)  # ← xview, а не xscrollcommand!
+        hsb = ttk.Scrollbar(report_frame, orient="horizontal", command=self.report_tree.xview) 
 
-        # 3. Привязываем скроллбары к Treeview
         self.report_tree.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
 
-        # 4. Упаковываем всё
         self.report_tree.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         vsb.pack(side=tk.RIGHT, fill=tk.Y)
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
@@ -187,7 +181,6 @@ class SimpleReportFilterDialog(tk.Toplevel):
 
         tk.Label(self, text="Параметры отчёта", font=("Arial", 14, "bold")).pack(pady=10)
 
-        # Период договора
         tk.Label(self, text="Дата договора от:").pack(anchor="w", padx=20)
         self.e_from = tk.Entry(self, width=20)
         self.e_from.pack(pady=2, padx=20)
@@ -196,18 +189,15 @@ class SimpleReportFilterDialog(tk.Toplevel):
         self.e_to = tk.Entry(self, width=20)
         self.e_to.pack(pady=2, padx=20)
 
-        # Заказчик (по части названия)
         tk.Label(self, text="Заказчик (содержит):").pack(anchor="w", padx=20)
         self.e_customer = tk.Entry(self, width=40)
         self.e_customer.pack(pady=2, padx=20)
 
-        # Минимальный долг (только для отчётов с долгом)
         tk.Label(self, text="Минимальный долг:").pack(anchor="w", padx=20)
         self.e_min_debt = tk.Entry(self, width=20)
         self.e_min_debt.insert(0, "0")
         self.e_min_debt.pack(pady=2, padx=20)
 
-        # Сортировка
         tk.Label(self, text="Сортировать по:", font=("Arial", 10, "bold")).pack(pady=(15,5), anchor="w", padx=20)
         self.sort_var = tk.StringVar(value="debt_amount")
         options = [

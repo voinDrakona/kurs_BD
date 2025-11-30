@@ -1,7 +1,4 @@
 import psycopg2
-from psycopg2 import sql
-from datetime import datetime
-import traceback
 
 class DatabaseConfig:
     """Конфигурация подключения к БД"""

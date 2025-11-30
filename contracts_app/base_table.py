@@ -9,7 +9,7 @@ class TableFrame(tk.Frame):
         super().__init__(parent)
         self.table_name = table_name
         self.columns_config = columns_config
-        self.id_field = id_field  # Имя поля ID (org_id, contract_id и т.д.)
+        self.id_field = id_field
         self.current_data = []
         self.filtered_data = []
         self.sort_column = None
@@ -48,13 +48,12 @@ class TableFrame(tk.Frame):
         hsb.pack(side=tk.BOTTOM, fill=tk.X)
         self.tree.pack(fill=tk.BOTH, expand=True)
         
-        # Configure columns
         self.tree.column('#0', width=50, minwidth=50)
         self.tree.heading('#0', text='№')
         
         for col in self.columns_config:
             if col['name'].endswith('_id') or col['name'] == self.id_field:
-                continue  # Скрываем ID
+                continue 
             self.tree.column(col['name'], width=col.get('width', 100))
             self.tree.heading(col['name'], text=col['display'], 
                               command=lambda c=col['name']: self.sort_by_column(c))
@@ -64,7 +63,6 @@ class TableFrame(tk.Frame):
             width = col.get('width', 100)
             
             if width == 0:
-                # Полностью скрываем колонку (даже заголовок не показываем)
                 self.tree.column(col_name, width=0, stretch=False, minwidth=0)
                 self.tree.heading(col_name, text="")
             else:
@@ -95,10 +93,10 @@ class TableFrame(tk.Frame):
         self.tree.delete(*self.tree.get_children())
         
         for idx, row in enumerate(self.filtered_data, 1):
-            id_value = row[0]  # ID всегда первый в SELECT
-            visible_values = row[1:]  # Остальные — видимые
+            id_value = row[0] 
+            visible_values = row[1:]
             item = self.tree.insert('', tk.END, text=str(idx), values=visible_values)
-            self.tree.item(item, tags=(id_value,))  # Сохраняем ID в tags
+            self.tree.item(item, tags=(id_value,)) 
     
     def get_selected_record(self):
         """Получить выбранную запись"""
@@ -109,7 +107,7 @@ class TableFrame(tk.Frame):
         item = self.tree.item(selection[0])
         id_value = item['tags'][0] if item['tags'] else None
         visible_values = item['values']
-        return (id_value, *visible_values)  # ID + видимые поля
+        return (id_value, *visible_values)
 
     def sort_by_column(self, col):
         """Сортировка по столбцу"""
